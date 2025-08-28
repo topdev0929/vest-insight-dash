@@ -11,6 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -25,6 +32,7 @@ import {
   Search,
   ArrowUpDown,
   Activity,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +46,19 @@ type SortDirection = "asc" | "desc";
 
 const Holdings = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSector, setSelectedSector] = useState<string>("");
+  const [hoveredSector, setHoveredSector] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("currentValue");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const portfolioSummary = getPortfolioSummary();
   const sectorAllocations = getSectorAllocations();
+
+  // Get unique sectors for the filter dropdown
+  const uniqueSectors = useMemo(() => {
+    const sectors = [...new Set(holdingsData.map((holding) => holding.sector))];
+    return sectors.sort();
+  }, []);
 
   // Color palette for sector chart
 
@@ -50,9 +66,12 @@ const Holdings = () => {
   const filteredAndSortedHoldings = useMemo(() => {
     const filtered = holdingsData.filter(
       (holding) =>
-        holding.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.sector.toLowerCase().includes(searchTerm.toLowerCase())
+        (selectedSector === "" ||
+          selectedSector === "All Sectors" ||
+          holding.sector === selectedSector) &&
+        (holding.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          holding.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          holding.sector.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     filtered.sort((a, b) => {
@@ -72,7 +91,7 @@ const Holdings = () => {
     });
 
     return filtered;
-  }, [searchTerm, sortField, sortDirection]);
+  }, [searchTerm, selectedSector, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -81,6 +100,18 @@ const Holdings = () => {
       setSortField(field);
       setSortDirection("desc");
     }
+  };
+
+  const handleSectorClick = (sectorName: string) => {
+    setSelectedSector(sectorName);
+  };
+
+  const handleSectorMouseEnter = (sectorName: string) => {
+    setHoveredSector(sectorName);
+  };
+
+  const handleSectorMouseLeave = () => {
+    setHoveredSector("");
   };
 
   return (
@@ -147,18 +178,39 @@ const Holdings = () => {
                     outerRadius={120}
                     paddingAngle={2}
                     dataKey="value"
+                    onClick={(data) => handleSectorClick(data.name)}
+                    onMouseEnter={(data) => handleSectorMouseEnter(data.name)}
+                    onMouseLeave={handleSectorMouseLeave}
+                    style={{ cursor: "pointer" }}
                   >
-                    {sectorAllocations.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={getSectorColor(index)}
-                      />
-                    ))}
+                    {sectorAllocations.map((entry, index) => {
+                      const isSelected = selectedSector === entry.name;
+                      const baseColor = getSectorColor(index);
+
+                      let finalColor = baseColor;
+                      let strokeColor = "none";
+                      let strokeWidth = 0;
+
+                      if (isSelected) {
+                        finalColor = baseColor + "DD"; // Add 87% opacity
+                        strokeColor = "#fff";
+                        strokeWidth = 10;
+                      }
+
+                      return (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={baseColor}
+                          stroke={strokeColor}
+                          strokeWidth={strokeWidth}
+                        />
+                      );
+                    })}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => [
+                    formatter={(value: number, name: string, props: any) => [
                       formatCurrency(value),
-                      "Value",
+                      props.payload.name,
                     ]}
                     contentStyle={{
                       backgroundColor: "hsl(var(--card))",
@@ -173,7 +225,14 @@ const Holdings = () => {
               {sectorAllocations.map((sector, index) => (
                 <div
                   key={sector.name}
-                  className="flex items-center justify-between text-sm"
+                  className={cn(
+                    "flex items-center justify-between text-sm cursor-pointer hover:bg-muted/50 p-1 rounded transition-colors",
+                    selectedSector === sector.name && "bg-muted/70",
+                    hoveredSector === sector.name && "bg-muted/30"
+                  )}
+                  onClick={() => handleSectorClick(sector.name)}
+                  onMouseEnter={() => handleSectorMouseEnter(sector.name)}
+                  onMouseLeave={handleSectorMouseLeave}
                 >
                   <div className="flex items-center space-x-2">
                     <div
@@ -189,6 +248,17 @@ const Holdings = () => {
                   </span>
                 </div>
               ))}
+              {selectedSector && selectedSector !== "All Sectors" && (
+                <div
+                  className="flex items-center justify-between text-sm cursor-pointer hover:bg-muted/50 p-1 rounded transition-colors text-muted-foreground"
+                  onClick={() => setSelectedSector("")}
+                >
+                  <div className="flex items-center space-x-2">
+                    <div className="h-3 w-3 rounded-sm bg-muted" />
+                    <span className="truncate">Clear Filter</span>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -210,6 +280,25 @@ const Holdings = () => {
                     className="pl-8 w-64"
                   />
                 </div>
+                <Select
+                  value={selectedSector}
+                  onValueChange={setSelectedSector}
+                >
+                  <SelectTrigger className="w-48">
+                    <div className="flex items-center space-x-2">
+                      <Filter className="h-4 w-4" />
+                      <SelectValue placeholder="Filter by sector" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="All Sectors">All Sectors</SelectItem>
+                    {uniqueSectors.map((sector) => (
+                      <SelectItem key={sector} value={sector}>
+                        {sector}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
